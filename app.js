@@ -1,4 +1,4 @@
-const STORAGE_KEY = "cyclesense-data-v1";
+﻿const STORAGE_KEY = "cyclesense-data-v1";
 const THEME_KEY = "cyclesense-theme-v1";
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DEFAULT_DURATION = 5;
@@ -17,10 +17,6 @@ const elements = {
   syncStatus: document.getElementById("syncStatus"),
   resetAppDataButton: document.getElementById("resetAppDataButton"),
   themeSwitcher: document.getElementById("themeSwitcher"),
-  menuToggle: document.getElementById("menuToggle"),
-  drawerBackdrop: document.getElementById("drawerBackdrop"),
-  sideDrawer: document.getElementById("sideDrawer"),
-  closeDrawerButton: document.getElementById("closeDrawerButton"),
   form: document.getElementById("cycleForm"),
   editState: document.getElementById("editState"),
   submitButton: document.getElementById("submitButton"),
@@ -67,56 +63,25 @@ function bootstrap() {
   window.handleNativeImportXlsx = handleNativeImportXlsx;
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./service-worker.js");
+    navigator.serviceWorker.getRegistrations().then(registrations => {
+      registrations.forEach(registration => registration.unregister());
+    });
   }
 
   render();
 }
 
 function bindEvents() {
-  elements.resetAppDataButton.addEventListener("click", handleResetAppData);
-  elements.themeSwitcher.addEventListener("click", handleThemeSwitch);
-  elements.menuToggle.addEventListener("click", toggleDrawer);
-  elements.drawerBackdrop.addEventListener("click", closeDrawer);
-  elements.closeDrawerButton.addEventListener("click", closeDrawer);
-  document.addEventListener("keydown", handleGlobalKeydown);
-  elements.form.addEventListener("submit", handleSubmit);
-  elements.logTodayButton.addEventListener("click", logToday);
-  elements.resetFormButton.addEventListener("click", resetForm);
-  elements.prevMonthButton.addEventListener("click", () => shiftMonth(-1));
-  elements.nextMonthButton.addEventListener("click", () => shiftMonth(1));
-  elements.exportButton.addEventListener("click", exportData);
-  elements.importButton.addEventListener("click", handleImportTrigger);
-  elements.importInput.addEventListener("change", handleImportXlsx);
-}
-
-function openDrawer() {
-  document.body.classList.add("drawer-open");
-  elements.sideDrawer.setAttribute("aria-hidden", "false");
-  elements.drawerBackdrop.hidden = false;
-  elements.menuToggle.setAttribute("aria-expanded", "true");
-}
-
-function closeDrawer() {
-  document.body.classList.remove("drawer-open");
-  elements.sideDrawer.setAttribute("aria-hidden", "true");
-  elements.drawerBackdrop.hidden = true;
-  elements.menuToggle.setAttribute("aria-expanded", "false");
-}
-
-function toggleDrawer() {
-  if (document.body.classList.contains("drawer-open")) {
-    closeDrawer();
-    return;
-  }
-
-  openDrawer();
-}
-
-function handleGlobalKeydown(event) {
-  if (event.key === "Escape") {
-    closeDrawer();
-  }
+  elements.resetAppDataButton?.addEventListener("click", handleResetAppData);
+  elements.themeSwitcher?.addEventListener("click", handleThemeSwitch);
+  elements.form?.addEventListener("submit", handleSubmit);
+  elements.logTodayButton?.addEventListener("click", logToday);
+  elements.resetFormButton?.addEventListener("click", resetForm);
+  elements.prevMonthButton?.addEventListener("click", () => shiftMonth(-1));
+  elements.nextMonthButton?.addEventListener("click", () => shiftMonth(1));
+  elements.exportButton?.addEventListener("click", exportData);
+  elements.importButton?.addEventListener("click", handleImportTrigger);
+  elements.importInput?.addEventListener("change", handleImportXlsx);
 }
 
 function loadEntries() {
@@ -219,7 +184,9 @@ function handleSubmit(event) {
   }
 
   saveEntries();
-  resetForm();
+  state.calendarMonth = startOfMonth(parseDateValue(entry.startDate));
+  state.editingEntryId = null;
+  updateFormMode();
   render();
 }
 
@@ -281,7 +248,6 @@ function shiftMonth(offset) {
   next.setMonth(next.getMonth() + offset);
   state.calendarMonth = startOfMonth(next);
   renderCalendar();
-  renderHistory();
 }
 
 function handleResetAppData() {
@@ -366,7 +332,6 @@ function renderCalendar() {
   const monthStart = startOfMonth(state.calendarMonth);
   const firstGridDate = startOfWeek(monthStart);
   const today = toISODate(new Date());
-  const periodDates = new Set(expandPeriodDates(state.entries));
   const predictedDates = new Set(expandPredictedDates(metrics.predictedStart, metrics.averageDuration));
   const fertileDates = new Set(expandDateRange(metrics.fertileWindow));
 
@@ -404,7 +369,7 @@ function renderCalendar() {
 
     tags.className = "day-tags";
 
-    const isPeriodDay = periodDates.has(isoDate);
+    const isPeriodDay = state.entries.some(entry => isoDate >= entry.startDate && isoDate <= entry.endDate);
     const isPredictedDay = predictedDates.has(isoDate);
     const isFertileDay = fertileDates.has(isoDate);
 
@@ -434,57 +399,41 @@ function renderHistory() {
     return;
   }
 
-  const monthStart = startOfMonth(state.calendarMonth);
-  const monthEnd = addDays(new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1), -1);
-  const visibleEntries = state.entries
-    .filter(entry => entryOverlapsMonth(entry, monthStart, monthEnd))
+  state.entries
     .slice()
-    .reverse();
+    .reverse()
+    .forEach(entry => {
+      const fragment = elements.historyItemTemplate.content.cloneNode(true);
+      const container = fragment.querySelector(".history-item");
 
-  if (!visibleEntries.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.textContent = `No cycles saved for ${monthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" })}.`;
-    elements.historyList.appendChild(empty);
-    return;
-  }
+      fragment.querySelector(".history-dates").textContent =
+        `${formatLongDate(entry.startDate)} to ${formatLongDate(entry.endDate)}`;
+      fragment.querySelector(".history-meta").textContent =
+        `${diffInDays(entry.startDate, entry.endDate) + 1} days - ${entry.flow} flow - ${entry.mood}`;
+      fragment.querySelector(".history-notes").textContent =
+        entry.symptoms.length || entry.notes
+          ? [entry.symptoms.join(", "), entry.notes].filter(Boolean).join(" - ")
+          : "No extra notes";
 
-  visibleEntries.forEach(entry => {
-    const fragment = elements.historyItemTemplate.content.cloneNode(true);
-    const container = fragment.querySelector(".history-item");
+      container.querySelector(".edit-button").addEventListener("click", () => {
+        startEditingEntry(entry.id);
+      });
 
-    fragment.querySelector(".history-dates").textContent =
-      `${formatLongDate(entry.startDate)} to ${formatLongDate(entry.endDate)}`;
-    fragment.querySelector(".history-meta").textContent =
-      `${diffInDays(entry.startDate, entry.endDate) + 1} days - ${entry.flow} flow - ${entry.mood}`;
-    fragment.querySelector(".history-notes").textContent =
-      entry.symptoms.length || entry.notes
-        ? [entry.symptoms.join(", "), entry.notes].filter(Boolean).join(" - ")
-        : "No extra notes";
+      container.querySelector(".delete-button").addEventListener("click", () => {
+        state.entries = state.entries.filter(item => item.id !== entry.id);
+        if (state.editingEntryId === entry.id) {
+          resetForm();
+        }
+        saveEntries();
+        state.statusMessage = "Cycle deleted from this device.";
+        render();
+      });
 
-    container.querySelector(".edit-button").addEventListener("click", () => {
-      startEditingEntry(entry.id);
+      elements.historyList.appendChild(fragment);
     });
-
-    container.querySelector(".delete-button").addEventListener("click", () => {
-      state.entries = state.entries.filter(item => item.id !== entry.id);
-      if (state.editingEntryId === entry.id) {
-        resetForm();
-      }
-      saveEntries();
-      state.statusMessage = "Cycle deleted from this device.";
-      render();
-    });
-
-    elements.historyList.appendChild(fragment);
-  });
 }
 
-function entryOverlapsMonth(entry, monthStart, monthEnd) {
-  const entryStart = parseDateValue(entry.startDate);
-  const entryEnd = parseDateValue(entry.endDate);
-  return entryStart <= monthEnd && entryEnd >= monthStart;
-}
+
 
 function getMetrics() {
   const cycleLengths = [];
@@ -630,31 +579,35 @@ function getCurrentPhase(metrics) {
 }
 
 async function exportData() {
-  const blob = buildWorkbookBlob(state.entries);
-  const fileName = `cyclesense-export-${toISODate(new Date())}.xlsx`;
+  try {
+    const blob = buildWorkbookBlob(state.entries);
+    const fileName = `cyclesense-export-${toISODate(new Date())}.xlsx`;
 
-  if (window.AndroidExport && typeof window.AndroidExport.saveXlsx === "function") {
-    try {
+    if (window.AndroidExport && typeof window.AndroidExport.saveXlsx === "function") {
       const base64Content = await blobToBase64(blob);
       window.AndroidExport.saveXlsx(base64Content, fileName);
       state.statusMessage = "XLSX export opened the Android share sheet.";
       renderTransferState();
       return;
-    } catch (error) {
-      alert("Android export failed. Please try again.");
-      return;
     }
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = fileName;
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    window.setTimeout(() => {
+      URL.revokeObjectURL(url);
+      link.remove();
+    }, 1000);
+    state.statusMessage = "XLSX exported. Import this file on another device to move your data.";
+    renderTransferState();
+  } catch (error) {
+    alert("XLSX export failed. Please try again.");
   }
-
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
-  state.statusMessage = "XLSX exported. Import this file on another device to move your data.";
-  renderTransferState();
 }
 
 function handleImportTrigger(event) {
@@ -701,16 +654,24 @@ async function importWorkbookFile(file) {
 
 async function parseWorkbookFile(file) {
   const buffer = await file.arrayBuffer();
-  const files = await unzipEntries(buffer);
-  const worksheetXml = files.get("xl/worksheets/sheet1.xml");
 
-  if (!worksheetXml) {
+  if (!window.XLSX) {
+    throw new Error("Spreadsheet library not loaded.");
+  }
+
+  const workbook = window.XLSX.read(buffer, { type: "array" });
+  const firstSheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[firstSheetName];
+
+  if (!sheet) {
     throw new Error("CycleSense sheet not found.");
   }
 
-  const sharedStringsXml = files.get("xl/sharedStrings.xml") || "";
-  const sharedStrings = parseSharedStrings(sharedStringsXml);
-  const rows = parseWorksheetRows(worksheetXml, sharedStrings);
+  const rows = window.XLSX.utils.sheet_to_json(sheet, {
+    header: 1,
+    raw: false,
+    defval: ""
+  });
 
   if (rows.length <= 1) {
     return [];
@@ -843,6 +804,29 @@ function normalizeImportedDate(value) {
 }
 
 function buildWorkbookBlob(entries) {
+  if (window.XLSX) {
+    const workbook = window.XLSX.utils.book_new();
+    const rows = buildWorksheetRows(entries);
+    const worksheet = window.XLSX.utils.aoa_to_sheet(rows);
+    worksheet["!cols"] = [
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 14 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 24 },
+      { wch: 36 },
+      { wch: 24 }
+    ];
+    window.XLSX.utils.book_append_sheet(workbook, worksheet, "Cycles");
+    const array = window.XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    return new Blob([array], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    });
+  }
+
+  const rows = buildWorksheetRows(entries);
+  const sharedStrings = buildSharedStrings(rows);
   const files = [
     {
       name: "[Content_Types].xml",
@@ -865,8 +849,12 @@ function buildWorkbookBlob(entries) {
       content: createStylesXml()
     },
     {
+      name: "xl/sharedStrings.xml",
+      content: createSharedStringsXml(sharedStrings)
+    },
+    {
       name: "xl/worksheets/sheet1.xml",
-      content: createWorksheetXml(entries)
+      content: createWorksheetXml(rows, sharedStrings)
     }
   ];
 
@@ -876,7 +864,7 @@ function buildWorkbookBlob(entries) {
   });
 }
 
-function createWorksheetXml(entries) {
+function buildWorksheetRows(entries) {
   const headers = [
     "Start Date",
     "End Date",
@@ -888,21 +876,46 @@ function createWorksheetXml(entries) {
     "Entry ID"
   ];
 
-  const rows = [headers].concat(entries.map(entry => [
+  return [headers].concat(entries.map(entry => [
     entry.startDate,
     entry.endDate,
     String(diffInDays(entry.startDate, entry.endDate) + 1),
     entry.flow,
     entry.mood,
-    entry.symptoms.join(", "),
-    entry.notes,
+    Array.isArray(entry.symptoms) ? entry.symptoms.join(", ") : "",
+    entry.notes || "",
     entry.id
   ]));
+}
 
+function buildSharedStrings(rows) {
+  const values = [];
+  const indexByValue = new Map();
+
+  rows.forEach(row => {
+    row.forEach(value => {
+      const stringValue = String(value || "");
+      if (!indexByValue.has(stringValue)) {
+        indexByValue.set(stringValue, values.length);
+        values.push(stringValue);
+      }
+    });
+  });
+
+  return {
+    values,
+    indexByValue,
+    count: rows.reduce((total, row) => total + row.length, 0)
+  };
+}
+
+function createWorksheetXml(rows, sharedStrings) {
   const sheetRows = rows.map((row, rowIndex) => {
     const cells = row.map((value, columnIndexValue) => {
       const cellReference = `${columnName(columnIndexValue)}${rowIndex + 1}`;
-      return `<c r="${cellReference}" t="inlineStr"><is><t>${escapeXml(value || "")}</t></is></c>`;
+      const stringValue = String(value || "");
+      const sharedIndex = sharedStrings.indexByValue.get(stringValue) || 0;
+      return `<c r="${cellReference}" t="s"><v>${sharedIndex}</v></c>`;
     }).join("");
 
     return `<row r="${rowIndex + 1}">${cells}</row>`;
@@ -913,7 +926,7 @@ function createWorksheetXml(entries) {
     "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">",
     "<sheetViews><sheetView workbookViewId=\"0\"/></sheetViews>",
     "<sheetFormatPr defaultRowHeight=\"15\"/>",
-    `<dimension ref=\"A1:H${rows.length}\"/>`,
+    `<dimension ref="A1:H${rows.length}"/>`,
     "<cols>",
     "<col min=\"1\" max=\"2\" width=\"16\" customWidth=\"1\"/>",
     "<col min=\"3\" max=\"3\" width=\"14\" customWidth=\"1\"/>",
@@ -927,6 +940,18 @@ function createWorksheetXml(entries) {
   ].join("");
 }
 
+function createSharedStringsXml(sharedStrings) {
+  const items = sharedStrings.values
+    .map(value => `<si><t xml:space="preserve">${escapeXml(value)}</t></si>`)
+    .join("");
+
+  return [
+    "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>",
+    `<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sharedStrings.count}" uniqueCount="${sharedStrings.values.length}">`,
+    items,
+    "</sst>"
+  ].join("");
+}
 function createContentTypesXml() {
   return [
     "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>",
@@ -936,10 +961,10 @@ function createContentTypesXml() {
     "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>",
     "<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>",
     "<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>",
+    "<Override PartName=\"/xl/sharedStrings.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml\"/>",
     "</Types>"
   ].join("");
 }
-
 function createRootRelsXml() {
   return [
     "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>",
@@ -964,16 +989,16 @@ function createWorkbookRelsXml() {
     "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
     "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>",
     "<Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>",
+    "<Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings\" Target=\"sharedStrings.xml\"/>",
     "</Relationships>"
   ].join("");
 }
-
 function createStylesXml() {
   return [
     "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>",
     "<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">",
     "<fonts count=\"1\"><font><sz val=\"11\"/><name val=\"Calibri\"/></font></fonts>",
-    "<fills count=\"1\"><fill><patternFill patternType=\"none\"/></fill></fills>",
+    "<fills count=\"2\"><fill><patternFill patternType=\"none\"/></fill><fill><patternFill patternType=\"gray125\"/></fill></fills>",
     "<borders count=\"1\"><border><left/><right/><top/><bottom/><diagonal/></border></borders>",
     "<cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs>",
     "<cellXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/></cellXfs>",
@@ -981,7 +1006,6 @@ function createStylesXml() {
     "</styleSheet>"
   ].join("");
 }
-
 function buildZipArchive(files) {
   const encoder = new TextEncoder();
   const fileRecords = files.map(file => {
@@ -1115,6 +1139,7 @@ function columnName(index) {
 
 function escapeXml(value) {
   return String(value)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -1166,6 +1191,13 @@ async function blobToBase64(blob) {
   });
 
   return btoa(binary);
+}
+
+function createTag(text, className) {
+  const tag = document.createElement("span");
+  tag.className = `tag ${className}`;
+  tag.textContent = text;
+  return tag;
 }
 
 function toISODate(date) {
@@ -1269,6 +1301,9 @@ function createId() {
 
   return `entry-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
+
+
+
 
 
 
