@@ -1,12 +1,13 @@
-﻿const CACHE_NAME = "mtrack-cache-v3";
+const CACHE_NAME = "cyclesense-cache-v4";
 const APP_ASSETS = [
   "./",
   "./index.html",
   "./style.css",
   "./app.js",
   "./manifest.json",
-  "./icons/icon.svg",
-  "./icons/icon-maskable.svg"
+  "./icons/cyclesense-192.png",
+  "./icons/cyclesense-512.png",
+  "./icons/apple-touch-icon.png"
 ];
 
 self.addEventListener("install", event => {

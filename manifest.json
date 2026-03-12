@@ -1,24 +1,22 @@
-﻿{
+{
   "name": "CycleSense",
   "short_name": "CycleSense",
   "description": "A private offline-first period tracker for cycle logging, predictions, and XLSX backups.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#fff8f6",
-  "theme_color": "#a63d57",
+  "background_color": "#C17189",
+  "theme_color": "#C17189",
   "icons": [
     {
-      "src": "icons/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
+      "src": "icons/cyclesense-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
     },
     {
-      "src": "icons/icon-maskable.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "maskable"
+      "src": "icons/cyclesense-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
     }
   ]
 }

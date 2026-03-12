@@ -8,14 +8,29 @@
     name="description"
     content="CycleSense is a private offline-first period tracker PWA for cycle logging, predictions, and wellness notes."
   >
-  <meta name="theme-color" content="#a63d57">
+  <meta name="theme-color" content="#C17189">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="512x512" href="icons/cyclesense-512.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <link rel="stylesheet" href="style.css">
 </head>
 <body data-theme="pink">
+  <button class="menu-toggle" id="menuToggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sideDrawer">Menu</button>
+  <div class="drawer-backdrop" id="drawerBackdrop" hidden></div>
+  <aside class="side-drawer" id="sideDrawer" aria-hidden="true">
+    <div class="drawer-header">
+      <p class="eyebrow">CycleSense</p>
+      <button class="drawer-close" id="closeDrawerButton" type="button" aria-label="Close navigation">Close</button>
+    </div>
+    <div class="drawer-content">
+      <p class="drawer-copy">Need help, feedback, or want to share an idea?</p>
+      <a class="primary-button drawer-link" href="https://cyclesense.carrd.co/" target="_blank" rel="noreferrer">Any questions or suggestions? Contact the developer here</a>
+    </div>
+  </aside>
   <div class="app-shell">
     <section class="card auth-card">
       <div>
@@ -210,7 +225,7 @@
           </div>
           <div class="history-actions">
             <button class="ghost-button" id="exportButton" type="button">Export XLSX</button>
-            <label class="import-button">
+            <label class="import-button" id="importButton">
               Import XLSX
               <input id="importInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
             </label>

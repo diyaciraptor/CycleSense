@@ -17,6 +17,10 @@ const elements = {
   syncStatus: document.getElementById("syncStatus"),
   resetAppDataButton: document.getElementById("resetAppDataButton"),
   themeSwitcher: document.getElementById("themeSwitcher"),
+  menuToggle: document.getElementById("menuToggle"),
+  drawerBackdrop: document.getElementById("drawerBackdrop"),
+  sideDrawer: document.getElementById("sideDrawer"),
+  closeDrawerButton: document.getElementById("closeDrawerButton"),
   form: document.getElementById("cycleForm"),
   editState: document.getElementById("editState"),
   submitButton: document.getElementById("submitButton"),
@@ -49,6 +53,7 @@ const elements = {
   prevMonthButton: document.getElementById("prevMonthButton"),
   nextMonthButton: document.getElementById("nextMonthButton"),
   exportButton: document.getElementById("exportButton"),
+  importButton: document.getElementById("importButton"),
   importInput: document.getElementById("importInput")
 };
 
@@ -59,6 +64,7 @@ function bootstrap() {
   hydrateFormDates();
   updateFormMode();
   bindEvents();
+  window.handleNativeImportXlsx = handleNativeImportXlsx;
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./service-worker.js");
@@ -70,13 +76,47 @@ function bootstrap() {
 function bindEvents() {
   elements.resetAppDataButton.addEventListener("click", handleResetAppData);
   elements.themeSwitcher.addEventListener("click", handleThemeSwitch);
+  elements.menuToggle.addEventListener("click", toggleDrawer);
+  elements.drawerBackdrop.addEventListener("click", closeDrawer);
+  elements.closeDrawerButton.addEventListener("click", closeDrawer);
+  document.addEventListener("keydown", handleGlobalKeydown);
   elements.form.addEventListener("submit", handleSubmit);
   elements.logTodayButton.addEventListener("click", logToday);
   elements.resetFormButton.addEventListener("click", resetForm);
   elements.prevMonthButton.addEventListener("click", () => shiftMonth(-1));
   elements.nextMonthButton.addEventListener("click", () => shiftMonth(1));
   elements.exportButton.addEventListener("click", exportData);
+  elements.importButton.addEventListener("click", handleImportTrigger);
   elements.importInput.addEventListener("change", handleImportXlsx);
+}
+
+function openDrawer() {
+  document.body.classList.add("drawer-open");
+  elements.sideDrawer.setAttribute("aria-hidden", "false");
+  elements.drawerBackdrop.hidden = false;
+  elements.menuToggle.setAttribute("aria-expanded", "true");
+}
+
+function closeDrawer() {
+  document.body.classList.remove("drawer-open");
+  elements.sideDrawer.setAttribute("aria-hidden", "true");
+  elements.drawerBackdrop.hidden = true;
+  elements.menuToggle.setAttribute("aria-expanded", "false");
+}
+
+function toggleDrawer() {
+  if (document.body.classList.contains("drawer-open")) {
+    closeDrawer();
+    return;
+  }
+
+  openDrawer();
+}
+
+function handleGlobalKeydown(event) {
+  if (event.key === "Escape") {
+    closeDrawer();
+  }
 }
 
 function loadEntries() {
@@ -241,6 +281,7 @@ function shiftMonth(offset) {
   next.setMonth(next.getMonth() + offset);
   state.calendarMonth = startOfMonth(next);
   renderCalendar();
+  renderHistory();
 }
 
 function handleResetAppData() {
@@ -393,38 +434,56 @@ function renderHistory() {
     return;
   }
 
-  state.entries
+  const monthStart = startOfMonth(state.calendarMonth);
+  const monthEnd = addDays(new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1), -1);
+  const visibleEntries = state.entries
+    .filter(entry => entryOverlapsMonth(entry, monthStart, monthEnd))
     .slice()
-    .reverse()
-    .forEach(entry => {
-      const fragment = elements.historyItemTemplate.content.cloneNode(true);
-      const container = fragment.querySelector(".history-item");
+    .reverse();
 
-      fragment.querySelector(".history-dates").textContent =
-        `${formatLongDate(entry.startDate)} to ${formatLongDate(entry.endDate)}`;
-      fragment.querySelector(".history-meta").textContent =
-        `${diffInDays(entry.startDate, entry.endDate) + 1} days - ${entry.flow} flow - ${entry.mood}`;
-      fragment.querySelector(".history-notes").textContent =
-        entry.symptoms.length || entry.notes
-          ? [entry.symptoms.join(", "), entry.notes].filter(Boolean).join(" - ")
-          : "No extra notes";
+  if (!visibleEntries.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = `No cycles saved for ${monthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" })}.`;
+    elements.historyList.appendChild(empty);
+    return;
+  }
 
-      container.querySelector(".edit-button").addEventListener("click", () => {
-        startEditingEntry(entry.id);
-      });
+  visibleEntries.forEach(entry => {
+    const fragment = elements.historyItemTemplate.content.cloneNode(true);
+    const container = fragment.querySelector(".history-item");
 
-      container.querySelector(".delete-button").addEventListener("click", () => {
-        state.entries = state.entries.filter(item => item.id !== entry.id);
-        if (state.editingEntryId === entry.id) {
-          resetForm();
-        }
-        saveEntries();
-        state.statusMessage = "Cycle deleted from this device.";
-        render();
-      });
+    fragment.querySelector(".history-dates").textContent =
+      `${formatLongDate(entry.startDate)} to ${formatLongDate(entry.endDate)}`;
+    fragment.querySelector(".history-meta").textContent =
+      `${diffInDays(entry.startDate, entry.endDate) + 1} days - ${entry.flow} flow - ${entry.mood}`;
+    fragment.querySelector(".history-notes").textContent =
+      entry.symptoms.length || entry.notes
+        ? [entry.symptoms.join(", "), entry.notes].filter(Boolean).join(" - ")
+        : "No extra notes";
 
-      elements.historyList.appendChild(fragment);
+    container.querySelector(".edit-button").addEventListener("click", () => {
+      startEditingEntry(entry.id);
     });
+
+    container.querySelector(".delete-button").addEventListener("click", () => {
+      state.entries = state.entries.filter(item => item.id !== entry.id);
+      if (state.editingEntryId === entry.id) {
+        resetForm();
+      }
+      saveEntries();
+      state.statusMessage = "Cycle deleted from this device.";
+      render();
+    });
+
+    elements.historyList.appendChild(fragment);
+  });
+}
+
+function entryOverlapsMonth(entry, monthStart, monthEnd) {
+  const entryStart = parseDateValue(entry.startDate);
+  const entryEnd = parseDateValue(entry.endDate);
+  return entryStart <= monthEnd && entryEnd >= monthStart;
 }
 
 function getMetrics() {
@@ -570,17 +629,39 @@ function getCurrentPhase(metrics) {
   };
 }
 
-function exportData() {
+async function exportData() {
   const blob = buildWorkbookBlob(state.entries);
+  const fileName = `cyclesense-export-${toISODate(new Date())}.xlsx`;
+
+  if (window.AndroidExport && typeof window.AndroidExport.saveXlsx === "function") {
+    try {
+      const base64Content = await blobToBase64(blob);
+      window.AndroidExport.saveXlsx(base64Content, fileName);
+      state.statusMessage = "XLSX export opened the Android share sheet.";
+      renderTransferState();
+      return;
+    } catch (error) {
+      alert("Android export failed. Please try again.");
+      return;
+    }
+  }
+
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
 
   link.href = url;
-  link.download = `cyclesense-export-${toISODate(new Date())}.xlsx`;
+  link.download = fileName;
   link.click();
   URL.revokeObjectURL(url);
   state.statusMessage = "XLSX exported. Import this file on another device to move your data.";
   renderTransferState();
+}
+
+function handleImportTrigger(event) {
+  if (window.AndroidImport && typeof window.AndroidImport.pickXlsx === "function") {
+    event.preventDefault();
+    window.AndroidImport.pickXlsx();
+  }
 }
 
 async function handleImportXlsx(event) {
@@ -589,6 +670,23 @@ async function handleImportXlsx(event) {
     return;
   }
 
+  await importWorkbookFile(file);
+  event.target.value = "";
+}
+
+async function handleNativeImportXlsx(base64Content, fileName) {
+  try {
+    const blob = base64ToBlob(base64Content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    const file = new File([blob], fileName || "cyclesense-import.xlsx", {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    });
+    await importWorkbookFile(file);
+  } catch (error) {
+    alert(`That XLSX file could not be imported: ${error.message}`);
+  }
+}
+
+async function importWorkbookFile(file) {
   try {
     const entries = await parseWorkbookFile(file);
     state.entries = sanitizeEntries(entries);
@@ -599,8 +697,6 @@ async function handleImportXlsx(event) {
   } catch (error) {
     alert(`That XLSX file could not be imported: ${error.message}`);
   }
-
-  event.target.value = "";
 }
 
 async function parseWorkbookFile(file) {
@@ -1060,11 +1156,16 @@ function expandDateRange(range) {
   return Array.from({ length: dayCount + 1 }, (_, index) => toISODate(addDays(start, index)));
 }
 
-function createTag(text, className) {
-  const tag = document.createElement("span");
-  tag.className = `tag ${className}`;
-  tag.textContent = text;
-  return tag;
+async function blobToBase64(blob) {
+  const buffer = await blob.arrayBuffer();
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+
+  bytes.forEach(byte => {
+    binary += String.fromCharCode(byte);
+  });
+
+  return btoa(binary);
 }
 
 function toISODate(date) {
